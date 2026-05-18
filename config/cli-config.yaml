@@ -1,0 +1,149 @@
+# cli-config.yaml — AI Office Agents용 Hermes Agent 설정
+# 이 파일을 ~/.hermes/cli-config.yaml 에 복사하세요.
+
+# ===========================
+# 기본 모델 설정
+# ===========================
+model:
+  provider: openai
+  model_id: gpt-4o
+  fallback_provider: anthropic
+  fallback_model_id: claude-sonnet-4-20250514
+
+# ===========================
+# API 키 (환경변수에서 읽기)
+# ===========================
+credentials:
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+  anthropic:
+    api_key: "${ANTHROPIC_API_KEY}"
+  google:
+    api_key: "${GOOGLE_AI_API_KEY}"
+
+# ===========================
+# Gateway 설정 (메시징 플랫폼)
+# ===========================
+gateway:
+  host: "0.0.0.0"
+  port: 8765
+
+  platforms:
+    # ─── 텔레그램 ───
+    telegram:
+      enabled: true
+      bot_token: "${TELEGRAM_BOT_TOKEN}"
+      allowed_users:
+        - "${TELEGRAM_ALLOWED_USERS}"
+      # 메시지 디듀플리케이션
+      dedup_window: 60
+
+    # ─── 슬랙 ───
+    slack:
+      enabled: true
+      bot_token: "${SLACK_BOT_TOKEN}"
+      app_token: "${SLACK_APP_TOKEN}"
+      default_channel: "${SLACK_REPORT_CHANNEL}"
+
+    # ─── Discord (선택) ───
+    discord:
+      enabled: false
+      bot_token: "${DISCORD_BOT_TOKEN}"
+
+# ===========================
+# 멀티 에이전트 설정
+# ===========================
+agents:
+  # 김대리 — OpenAI GPT
+  - id: "kim-daeri"
+    display_name: "김대리"
+    provider: openai
+    model_id: gpt-4o
+    persona_dir: "./agents/openai-agent"
+    tools:
+      - web_search
+      - code_execution
+      - file_operations
+
+  # 박과장 — Anthropic Claude
+  - id: "park-gwajang"
+    display_name: "박과장"
+    provider: anthropic
+    model_id: claude-sonnet-4-20250514
+    persona_dir: "./agents/claude-agent"
+    tools:
+      - web_search
+      - file_operations
+      - code_execution
+
+  # 이주임 — Google Gemini
+  - id: "lee-juim"
+    display_name: "이주임"
+    provider: google
+    model_id: gemini-2.0-flash
+    persona_dir: "./agents/gemini-agent"
+    tools:
+      - web_search
+      - file_operations
+
+# ===========================
+# Cron 스케줄 (자동 보고)
+# ===========================
+cron:
+  enabled: true
+  jobs:
+    # 매일 오전 9시: 일일 상태 보고
+    - name: "daily-status"
+      schedule: "0 9 * * *"
+      action: "각 직원의 어제 작업 요약과 오늘 계획을 텔레그램으로 보고해줘"
+      delivery:
+        - telegram
+
+    # 매주 금요일 오후 5시: 주간 보고서
+    - name: "weekly-report"
+      schedule: "0 17 * * 5"
+      action: "이번 주 작업 내용을 종합하여 주간 보고서를 작성하고 슬랙과 텔레그램으로 보내줘"
+      delivery:
+        - telegram
+        - slack
+
+# ===========================
+# 도구 설정
+# ===========================
+tools:
+  web_search:
+    enabled: true
+    max_results: 10
+
+  code_execution:
+    enabled: true
+    timeout: 120
+
+  file_operations:
+    enabled: true
+    allowed_paths:
+      - "./workspace"
+      - "./reports"
+
+  browser:
+    enabled: false  # 필요 시 활성화
+
+# ===========================
+# DeskRPG 연동
+# ===========================
+deskrpg:
+  enabled: true
+  server_url: "http://localhost:3000"
+  ws_url: "ws://localhost:3000/api/openclaw"
+  openclaw_token: "${OPENCLAW_TOKEN}"
+
+# ===========================
+# 메모리/스킬 설정
+# ===========================
+memory:
+  enabled: true
+  nudge_interval: 300  # 5분마다 메모리 정리 넛지
+
+skills:
+  auto_create: true
+  sync_interval: 600  # 10분마다 스킬 동기화

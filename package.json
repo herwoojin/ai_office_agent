@@ -1,0 +1,13 @@
+{
+  "name": "ai-office-agents",
+  "version": "1.0.0",
+  "description": "3명의 AI 직원이 가상 사무실에서 일하는 멀티 에이전트 시스템",
+  "scripts": {
+    "setup": "bash scripts/setup.sh",
+    "start": "bash scripts/start.sh",
+    "dev:deskrpg": "cd desk_rpg_model && npm run dev",
+    "dev:gateway": "hermes gateway"
+  },
+  "keywords": ["ai", "multi-agent", "deskrpg", "hermes", "telegram"],
+  "license": "MIT"
+}

@@ -1,0 +1,53 @@
+# ─── 민감 정보 ───
+.env.local
+*.env.local
+.env.local*
+# .env.example, .env.template 등은 트래킹 (값이 placeholder)
+!*.env.example
+!.env.example
+
+# ─── 의존성 ───
+node_modules/
+**/node_modules/
+# package-lock.json 은 재현성을 위해 커밋
+
+# ─── 빌드 산출물 ───
+.next/
+**/.next/
+.artifacts/
+dist/
+out/
+*.tsbuildinfo
+
+# ─── 데이터 / 런타임 ───
+.pids/
+logs/
+**/logs/
+data/
+**/data/
+*.db
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.bak
+*.bak.*
+
+# ─── OS / 에디터 ───
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# ─── 데모 ───
+demo/video/*.webm
+demo/node_modules/
+
+# ─── 임시 ───
+/tmp/
+*.tmp
+*.cache/
+
+# ─── DeskRPG upstream git 분리 ───
+desk_rpg_model/.git/

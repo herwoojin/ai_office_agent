@@ -1,0 +1,93 @@
+{
+  "name": "AI 전략기획팀 사무실",
+  "description": "3명의 AI 직원을 위한 사무실 배치. 각자 데스크 + 공용 회의실.",
+  "mapSize": { "width": 24, "height": 18 },
+  "tileSize": 32,
+
+  "zones": [
+    {
+      "id": "desk-gpt",
+      "label": "김대리 자리",
+      "type": "desk",
+      "position": { "x": 6, "y": 4 },
+      "size": { "width": 3, "height": 2 },
+      "assignedNpc": "ai-gpt-kim",
+      "objects": [
+        { "type": "desk_large", "x": 7, "y": 4 },
+        { "type": "chair", "x": 7, "y": 5 },
+        { "type": "monitor", "x": 7, "y": 4 },
+        { "type": "coffee_cup", "x": 8, "y": 4 }
+      ]
+    },
+    {
+      "id": "desk-claude",
+      "label": "박과장 자리",
+      "type": "desk",
+      "position": { "x": 11, "y": 4 },
+      "size": { "width": 3, "height": 2 },
+      "assignedNpc": "ai-claude-park",
+      "objects": [
+        { "type": "desk_large", "x": 12, "y": 4 },
+        { "type": "chair", "x": 12, "y": 5 },
+        { "type": "monitor", "x": 12, "y": 4 },
+        { "type": "bookshelf", "x": 13, "y": 4 }
+      ]
+    },
+    {
+      "id": "desk-gemini",
+      "label": "이주임 자리",
+      "type": "desk",
+      "position": { "x": 16, "y": 4 },
+      "size": { "width": 3, "height": 2 },
+      "assignedNpc": "ai-gemini-lee",
+      "objects": [
+        { "type": "desk_large", "x": 17, "y": 4 },
+        { "type": "chair", "x": 17, "y": 5 },
+        { "type": "monitor", "x": 17, "y": 4 },
+        { "type": "plant", "x": 18, "y": 4 }
+      ]
+    },
+    {
+      "id": "meeting-room",
+      "label": "AI 회의실",
+      "type": "meeting",
+      "position": { "x": 9, "y": 10 },
+      "size": { "width": 6, "height": 5 },
+      "objects": [
+        { "type": "table_meeting", "x": 12, "y": 12 },
+        { "type": "chair", "x": 10, "y": 12 },
+        { "type": "chair", "x": 12, "y": 11 },
+        { "type": "chair", "x": 14, "y": 12 },
+        { "type": "whiteboard", "x": 12, "y": 10 },
+        { "type": "projector_screen", "x": 12, "y": 10 }
+      ]
+    },
+    {
+      "id": "break-area",
+      "label": "휴게 공간",
+      "type": "lounge",
+      "position": { "x": 18, "y": 10 },
+      "size": { "width": 4, "height": 4 },
+      "objects": [
+        { "type": "sofa", "x": 19, "y": 11 },
+        { "type": "coffee_machine", "x": 20, "y": 10 },
+        { "type": "plant_large", "x": 21, "y": 10 }
+      ]
+    }
+  ],
+
+  "npcSpawnPoints": {
+    "ai-gpt-kim":     { "x": 7,  "y": 5 },
+    "ai-claude-park":  { "x": 12, "y": 5 },
+    "ai-gemini-lee":   { "x": 17, "y": 5 }
+  },
+
+  "meetingRoomEntry": { "x": 12, "y": 14 },
+  
+  "wallTiles": [
+    { "from": { "x": 0, "y": 0 }, "to": { "x": 23, "y": 0 } },
+    { "from": { "x": 0, "y": 0 }, "to": { "x": 0, "y": 17 } },
+    { "from": { "x": 23, "y": 0 }, "to": { "x": 23, "y": 17 } },
+    { "from": { "x": 0, "y": 17 }, "to": { "x": 23, "y": 17 } }
+  ]
+}

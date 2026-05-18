@@ -1,0 +1,95 @@
+// =============================================================================
+// AI Office Agents — Firebase Storage Rules
+// Project: desk-rpg-a2edb
+//
+// 디자인 원칙:
+//  - 사용자 업로드 파일은 본인 폴더(/users/{uid}/...) 에만 저장
+//  - 채널 자산은 멤버만 read, owner 만 write
+//  - 공개 자산(/public/...) 은 누구나 read, admin 만 write
+//  - 파일 크기 제한: 이미지 5MB, 일반 파일 20MB
+// =============================================================================
+
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ─────────────── 헬퍼 ───────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      // Firestore 의 /users/{uid}.systemRole 을 참조
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.systemRole == "system_admin";
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function under(maxBytes) {
+      return request.resource.size < maxBytes;
+    }
+
+
+    // ─────────────── /users/{uid}/avatar/... ───────────────
+    // 사용자 아바타. 본인 read/write, 다른 사람 read (프로필 표시용).
+    match /users/{uid}/avatar/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSelf(uid) && isImage() && under(5 * 1024 * 1024);
+    }
+
+
+    // ─────────────── /users/{uid}/private/... ───────────────
+    // 사용자 개인 파일. 본인만 접근.
+    match /users/{uid}/private/{fileName=**} {
+      allow read, write: if isSelf(uid) && under(20 * 1024 * 1024);
+    }
+
+
+    // ─────────────── /channels/{channelId}/... ───────────────
+    // 채널 내 첨부파일. 멤버 read, 업로더만 delete.
+    match /channels/{channelId}/{fileName=**} {
+      allow read: if isSignedIn()
+        && firestore.exists(/databases/(default)/documents/channels/$(channelId)/members/$(request.auth.uid));
+      allow create: if isSignedIn()
+        && firestore.exists(/databases/(default)/documents/channels/$(channelId)/members/$(request.auth.uid))
+        && under(20 * 1024 * 1024);
+      allow delete: if isSignedIn()
+        && resource.metadata.uploaderId == request.auth.uid;
+    }
+
+
+    // ─────────────── /reports/{channelId}/{reportId}/... ───────────────
+    // 회의 보고서 파일. 채널 멤버 read.
+    match /reports/{channelId}/{reportId}/{fileName=**} {
+      allow read: if isSignedIn()
+        && firestore.exists(/databases/(default)/documents/channels/$(channelId)/members/$(request.auth.uid));
+      allow write: if isSignedIn()
+        && firestore.exists(/databases/(default)/documents/channels/$(channelId)/members/$(request.auth.uid))
+        && under(20 * 1024 * 1024);
+    }
+
+
+    // ─────────────── /public/... ───────────────
+    // 공개 자산 (스프라이트, 배경 등). 누구나 read.
+    match /public/{fileName=**} {
+      allow read: if true;
+      allow write: if isAdmin() && under(50 * 1024 * 1024);
+    }
+
+
+    // ─────────────── 기본 deny ───────────────
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

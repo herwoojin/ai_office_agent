@@ -1,0 +1,65 @@
+# =====================================================================
+# Netlify 배포 설정 — AI Office Agents
+#
+# ⚠️ 알림: 이 프로젝트의 Socket.IO / OpenClaw / SQLite / 텔레그램 폴링은
+# Netlify에서 동작하지 않습니다. 자세한 내용은 NETLIFY.md 참고.
+#
+# 이 설정은 "데모/랜딩 페이지" 용도로 부분 배포할 때만 의미가 있습니다.
+# =====================================================================
+
+[build]
+  base = "desk_rpg_model"
+  command = "npm run build"
+  publish = "desk_rpg_model/.next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+# Next.js 통합 플러그인 (자동 감지/SSR 지원)
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# ─── 헤더 설정 ───
+
+# Firebase Google 로그인 팝업이 COOP 정책에 막히지 않게
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin-allow-popups"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "SAMEORIGIN"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# 데모 영상은 long cache
+[[headers]]
+  for = "/demo/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# 정적 자산 (스프라이트, 타일셋) long cache
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# ─── 리다이렉트 ───
+
+# Socket.IO 요청은 외부 게임 서버로 프록시 (예: Render에서 호스팅 중인 서버)
+# 환경변수 GAME_SERVER_URL 을 설정하고 아래 주석 해제
+# [[redirects]]
+#   from = "/socket.io/*"
+#   to = "https://${GAME_SERVER_URL}/socket.io/:splat"
+#   status = 200
+#   force = true
+#
+# [[redirects]]
+#   from = "/api/socket/*"
+#   to = "https://${GAME_SERVER_URL}/api/socket/:splat"
+#   status = 200
+#   force = true
+
+# SPA fallback
+[[redirects]]
+  from = "/*"
+  status = 200

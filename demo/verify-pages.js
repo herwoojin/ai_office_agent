@@ -33,9 +33,9 @@ const JWT_SECRET = process.env.JWT_SECRET || "deskrpg-dev-jwt-secret-do-not-use-
   fs.mkdirSync(OUT, { recursive: true });
 
   const targets = [
+    ["nav-07-setup.png", "http://localhost:3000/setup"],
     ["nav-05-settings-llm.png", "http://localhost:3000/settings/llm"],
     ["nav-01-characters.png", "http://localhost:3000/characters"],
-    ["nav-02-demo.png", "http://localhost:3000/demo"],
   ];
   for (const [name, url, anon] of targets) {
     if (anon) {

@@ -231,7 +231,10 @@ export default function LlmSettingsPage() {
               </div>
             </section>
 
-            {/* ── 3. 디버그 정보 ── */}
+            {/* ── 3. 모드별 프롬프트 ── */}
+            <ModePromptsSection />
+
+            {/* ── 4. 디버그 정보 ── */}
             {data.rawStatusError && (
               <section className="bg-red-900/30 border border-red-700 rounded p-4 text-sm">
                 ⚠ OpenClaw status 호출 실패: {data.rawStatusError}
@@ -356,5 +359,190 @@ function NpcConfigCard({
         </div>
       )}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// 모드별 프롬프트 편집 (Firestore 또는 로컬 저장)
+// ─────────────────────────────────────────────────────────────
+
+type Mode = "working" | "meeting" | "research" | "report";
+
+const MODE_INFO: Record<Mode, { label: string; emoji: string; desc: string }> = {
+  working: { label: "작업 중", emoji: "💼", desc: "자기 자리에서 묵묵히 일하는 모드. 응답 2~3문장 짧게." },
+  meeting: { label: "회의", emoji: "🪑", desc: "회의실에서 한 줄 의견. 140자 이내." },
+  research: { label: "리서치", emoji: "🔍", desc: "주제 깊이 분석. 3~5문단." },
+  report: { label: "보고서", emoji: "📄", desc: "보고서 섹션 작성. 800~1500자." },
+};
+
+const AGENT_LABELS: Record<string, string> = {
+  "kim-daeri": "김대리 (📊 OpenAI GPT)",
+  "park-gwajang": "박과장 (✍️ Anthropic Claude)",
+  "lee-juim": "이주임 (🔍 Google Gemini)",
+};
+
+interface PromptDoc {
+  base: string;
+  modes: Record<Mode, { systemPrompt: string }>;
+  updatedAt?: string;
+}
+
+function ModePromptsSection() {
+  const [prompts, setPrompts] = useState<Record<string, PromptDoc> | null>(null);
+  const [source, setSource] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [activeAgent, setActiveAgent] = useState<string>("kim-daeri");
+  const [activeMode, setActiveMode] = useState<Mode>("working");
+  const [draft, setDraft] = useState<{ base: string; mode: string }>({ base: "", mode: "" });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/office/prompts");
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "load failed");
+      setPrompts(d.prompts);
+      setSource(d.source);
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "load error" });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!prompts) return;
+    const doc = prompts[activeAgent];
+    if (!doc) return;
+    setDraft({
+      base: doc.base || "",
+      mode: doc.modes?.[activeMode]?.systemPrompt || "",
+    });
+  }, [prompts, activeAgent, activeMode]);
+
+  async function save() {
+    setSaving(true); setMsg(null);
+    try {
+      const res = await fetch("/api/office/prompts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentId: activeAgent,
+          base: draft.base,
+          modes: { [activeMode]: { systemPrompt: draft.mode } },
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.ok) throw new Error(d.error || "save failed");
+      setMsg({ kind: "ok", text: `${AGENT_LABELS[activeAgent]} / ${MODE_INFO[activeMode].label} 저장됨 (→ ${d.source})` });
+      await load();
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "save error" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="bg-gray-800 rounded-lg p-6">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h2 className="text-xl font-bold mb-1">🧠 3단계 — 모드별 시스템 프롬프트</h2>
+          <p className="text-sm text-gray-400">
+            각 NPC가 4가지 작업 모드(작업/회의/리서치/보고서)에서 어떻게 동작할지 시스템 프롬프트를 편집합니다.
+            {source === "firestore" && <span className="ml-2 text-emerald-400">☁ Firestore</span>}
+            {source === "local" && <span className="ml-2 text-yellow-400">💾 로컬 저장 (Firestore 미연결)</span>}
+          </p>
+        </div>
+      </div>
+
+      {loading && <p className="text-gray-400">불러오는 중...</p>}
+
+      {!loading && prompts && (
+        <>
+          {msg && (
+            <div className={`mb-3 px-3 py-2 rounded text-sm ${msg.kind === "ok" ? "bg-emerald-900/40 text-emerald-200 border border-emerald-700" : "bg-red-900/40 text-red-200 border border-red-700"}`}>
+              {msg.text}
+            </div>
+          )}
+
+          {/* NPC 탭 */}
+          <div className="flex gap-2 mb-3 flex-wrap">
+            {Object.keys(AGENT_LABELS).map((aid) => (
+              <button
+                key={aid}
+                onClick={() => setActiveAgent(aid)}
+                className={`px-3 py-1.5 rounded text-sm font-medium ${activeAgent === aid ? "bg-amber-600" : "bg-gray-700 hover:bg-gray-600"}`}
+              >
+                {AGENT_LABELS[aid]}
+              </button>
+            ))}
+          </div>
+
+          {/* 모드 탭 */}
+          <div className="flex gap-2 mb-4 flex-wrap">
+            {(Object.keys(MODE_INFO) as Mode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setActiveMode(m)}
+                className={`px-3 py-1.5 rounded text-sm font-medium ${activeMode === m ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"}`}
+                title={MODE_INFO[m].desc}
+              >
+                {MODE_INFO[m].emoji} {MODE_INFO[m].label}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs text-gray-500 mb-3">
+            <strong>{MODE_INFO[activeMode].emoji} {MODE_INFO[activeMode].label} 모드</strong>: {MODE_INFO[activeMode].desc}
+          </p>
+
+          {/* 베이스 페르소나 */}
+          <div className="mb-4">
+            <label className="block text-xs text-gray-400 mb-1">
+              베이스 페르소나 (모든 모드에 항상 포함됨)
+            </label>
+            <textarea
+              value={draft.base}
+              onChange={(e) => setDraft((s) => ({ ...s, base: e.target.value }))}
+              rows={6}
+              className="w-full p-3 bg-black/50 border border-gray-700 rounded text-xs font-mono"
+              placeholder="# 김대리 (📊 OpenAI GPT)..."
+            />
+          </div>
+
+          {/* 모드별 시스템 프롬프트 */}
+          <div className="mb-4">
+            <label className="block text-xs text-gray-400 mb-1">
+              {MODE_INFO[activeMode].emoji} <strong>{MODE_INFO[activeMode].label}</strong> 모드 전용 지시 (이 모드 진행 시 베이스 뒤에 붙음)
+            </label>
+            <textarea
+              value={draft.mode}
+              onChange={(e) => setDraft((s) => ({ ...s, mode: e.target.value }))}
+              rows={10}
+              className="w-full p-3 bg-black/50 border border-gray-700 rounded text-xs font-mono"
+              placeholder="## 지금 모드: ..."
+            />
+          </div>
+
+          <div className="flex justify-between items-center">
+            <p className="text-xs text-gray-500">
+              💡 <strong>{MODE_INFO[activeMode].label}</strong> 모드는 <code className="bg-black/30 px-1 rounded">/{activeMode === "meeting" ? "meeting" : activeMode === "research" ? "research" : activeMode === "report" ? "report" : "task"}</code> 명령이 트리거 함.
+            </p>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded font-semibold"
+            >
+              {saving ? "저장 중..." : "💾 저장"}
+            </button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }

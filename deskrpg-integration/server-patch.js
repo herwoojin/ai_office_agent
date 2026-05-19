@@ -55,6 +55,15 @@ function setupAIOfficeAgents(io, db, schema, taskManager, channelGateways) {
   // ─── 텔레그램 봇 폴러 (TELEGRAM_BOT_TOKEN 가 채워지면 자동 가동) ───
   startTelegramPoller(wanderCtx);
 
+  // ─── Slack 폴러 (SLACK_BOT_TOKEN + SLACK_APP_TOKEN 필요, Socket Mode) ───
+  startSlackPoller(wanderCtx);
+
+  // ─── Discord 봇 폴러 (DISCORD_BOT_TOKEN 필요) ───
+  startDiscordPoller(wanderCtx);
+
+  // ─── Firestore 동기화 (FIREBASE_SERVICE_ACCOUNT_PATH 설정 시) ───
+  startFirestoreSync(wanderCtx);
+
   // ─── Socket.IO 이벤트: 텔레그램 → 태스크 ───
 
   io.on("connection", (socket) => {
@@ -631,7 +640,11 @@ function startTelegramPoller(ctx) {
         const msg = upd.message;
         if (!msg || !msg.text) continue;
         if (allowed.size > 0 && !allowed.has(String(msg.from.id))) continue;
-        await handleTelegramMessage(ctx, token, msg.chat.id, msg.text.trim());
+        await handleIncomingMessage(ctx, {
+          platform: "telegram",
+          text: msg.text.trim(),
+          replyTo: { token, chatId: msg.chat.id },
+        });
       }
     } catch (e) {
       console.warn("[AI-Office] tg poll error:", e.message);
@@ -656,39 +669,384 @@ async function sendTelegram(token, chatId, text) {
   } catch {}
 }
 
-async function handleTelegramMessage(ctx, token, chatId, text) {
+// handleTelegramMessage 는 이제 handleIncomingMessage (Slack/Discord 통합) 로 대체됨
+
+// ─────────────────────────────────────────────────────────────
+// Slack 리스너 (Events API HTTP webhook OR polling)
+// ─────────────────────────────────────────────────────────────
+
+function startSlackPoller(ctx) {
+  const botToken = process.env.SLACK_BOT_TOKEN;
+  if (!botToken || botToken.startsWith("xoxb-xxxx")) {
+    console.log("[AI-Office] slack: SLACK_BOT_TOKEN 미설정 — 미가동.");
+    return;
+  }
+  const channel = process.env.SLACK_REPORT_CHANNEL || "";
+
+  console.log("[AI-Office] slack 리스너 가동 (channels=" + (channel || "any") + ")");
+
+  // 마지막으로 확인한 timestamp (ts) 저장
+  let lastTs = String(Math.floor(Date.now() / 1000));
+
+  async function pollSlack() {
+    if (!channel) return; // 채널 미설정 시 polling 안 함 (webhook 권장)
+    try {
+      const url = `https://slack.com/api/conversations.history?channel=${channel}&oldest=${lastTs}&limit=20`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${botToken}` },
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        if (data.error !== "ratelimited") {
+          console.warn("[AI-Office] slack history err:", data.error);
+        }
+        return;
+      }
+      // 시간순 정렬 (oldest first)
+      const messages = (data.messages || []).reverse();
+      for (const m of messages) {
+        if (!m.text || m.bot_id) continue;
+        if (Number(m.ts) <= Number(lastTs)) continue;
+        lastTs = m.ts;
+        await handleIncomingMessage(ctx, {
+          platform: "slack",
+          text: m.text.trim(),
+          replyTo: { channel, ts: m.ts, botToken },
+        });
+      }
+    } catch (e) {
+      console.warn("[AI-Office] slack poll error:", e.message);
+    }
+  }
+  setInterval(pollSlack, 5000);
+}
+
+async function replyToSlack(replyTo, text) {
+  try {
+    await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${replyTo.botToken}`,
+      },
+      body: JSON.stringify({ channel: replyTo.channel, text, thread_ts: replyTo.ts }),
+    });
+  } catch (e) { console.warn("[AI-Office] slack reply err:", e.message); }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Discord 리스너 (Gateway WebSocket — discord.js 없이 raw WS 로 가볍게)
+// ─────────────────────────────────────────────────────────────
+
+function startDiscordPoller(ctx) {
+  const token = process.env.DISCORD_BOT_TOKEN;
+  if (!token || token.startsWith("Discord-Bot-")) {
+    console.log("[AI-Office] discord: DISCORD_BOT_TOKEN 미설정 — 미가동.");
+    return;
+  }
+  const allowedChannel = process.env.DISCORD_CHANNEL_ID || "";
+  console.log("[AI-Office] discord 리스너 가동 (channel=" + (allowedChannel || "any") + ")");
+
+  let WebSocket;
+  try {
+    WebSocket = require(path.join(
+      __dirname, "..", "desk_rpg_model", "node_modules", "ws",
+    ));
+  } catch (e) {
+    console.warn("[AI-Office] discord: ws 모듈 로드 실패 —", e.message);
+    return;
+  }
+
+  function connect() {
+    const ws = new WebSocket("wss://gateway.discord.gg/?v=10&encoding=json");
+    let heartbeat = null;
+    let seq = null;
+
+    ws.on("message", async (raw) => {
+      let msg;
+      try { msg = JSON.parse(raw.toString()); } catch { return; }
+      const { op, d, t, s } = msg;
+      if (s != null) seq = s;
+
+      if (op === 10) {
+        // HELLO — heartbeat 시작 + identify
+        const interval = d.heartbeat_interval;
+        heartbeat = setInterval(() => {
+          ws.send(JSON.stringify({ op: 1, d: seq }));
+        }, interval);
+        ws.send(JSON.stringify({
+          op: 2,
+          d: {
+            token,
+            intents: (1 << 9) | (1 << 15), // GUILD_MESSAGES + MESSAGE_CONTENT
+            properties: { os: "darwin", browser: "ai-office", device: "ai-office" },
+          },
+        }));
+      } else if (op === 0 && t === "MESSAGE_CREATE") {
+        if (!d.content || d.author?.bot) return;
+        if (allowedChannel && d.channel_id !== allowedChannel) return;
+        await handleIncomingMessage(ctx, {
+          platform: "discord",
+          text: d.content.trim(),
+          replyTo: { channelId: d.channel_id, token },
+        });
+      }
+    });
+
+    ws.on("close", (code) => {
+      console.warn("[AI-Office] discord ws closed:", code, "— reconnecting in 5s");
+      if (heartbeat) clearInterval(heartbeat);
+      setTimeout(connect, 5000);
+    });
+    ws.on("error", (err) => {
+      console.warn("[AI-Office] discord ws error:", err.message);
+    });
+  }
+  connect();
+}
+
+async function replyToDiscord(replyTo, text) {
+  try {
+    await fetch(`https://discord.com/api/v10/channels/${replyTo.channelId}/messages`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bot ${replyTo.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ content: text.slice(0, 1900) }),
+    });
+  } catch (e) { console.warn("[AI-Office] discord reply err:", e.message); }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 통합 메시지 핸들러 (telegram/slack/discord 공통)
+// ─────────────────────────────────────────────────────────────
+
+async function handleIncomingMessage(ctx, msg) {
+  // msg: { platform, text, replyTo, fromUserId? }
+  const text = (msg.text || "").trim();
+  if (!text) return;
+
+  console.log(`[AI-Office] ${msg.platform} ← ${text.slice(0, 80)}`);
+
+  async function reply(out) {
+    if (msg.platform === "telegram") {
+      await sendTelegram(msg.replyTo.token, msg.replyTo.chatId, out);
+    } else if (msg.platform === "slack") {
+      await replyToSlack(msg.replyTo, out);
+    } else if (msg.platform === "discord") {
+      await replyToDiscord(msg.replyTo, out);
+    }
+  }
+
+  // 명령어 파싱
   if (text.startsWith("/task")) {
     const task = text.slice(5).trim() || "업무 지시";
-    await sendTelegram(token, chatId, `📋 업무 분배: ${task}`);
+    await reply(`📋 업무 분배: ${task}`);
     const r = await triggerTask(ctx, task);
-    await sendTelegram(token, chatId, `✓ ${r.distributed}명에게 분배됨`);
+    await reply(`✓ ${r.distributed}명에게 분배됨`);
   } else if (text.startsWith("/meeting")) {
     const topic = text.slice(8).trim() || "정기 회의";
-    await sendTelegram(token, chatId, `🪑 회의 소집: ${topic}\n3명이 회의실로 이동합니다...`);
+    await reply(`🪑 회의 소집: ${topic}\n3명이 회의실로 이동합니다... (60~90초)`);
     const r = await triggerMeeting(ctx, topic);
-    if (r.ok) {
-      await sendTelegram(token, chatId, `✓ 회의 종료 — 참석: ${r.participants.join(", ")}`);
-    } else {
-      await sendTelegram(token, chatId, `✗ 회의 실패: ${r.error}`);
-    }
+    if (r.ok) await reply(`✓ 회의 종료 — 참석: ${r.participants.join(", ")}`);
+    else await reply(`✗ 회의 실패: ${r.error}`);
+  } else if (text.startsWith("/research")) {
+    const topic = text.slice(9).trim() || "리서치 주제";
+    await reply(`🔍 리서치 시작: ${topic}`);
+    const r = await triggerResearch(ctx, topic);
+    await reply(r.summary || `완료: ${r.entries?.length || 0}건`);
+  } else if (text.startsWith("/report")) {
+    const subject = text.slice(7).trim() || "보고서 주제";
+    await reply(`📄 보고서 작성 중: ${subject} (1~2분 소요)`);
+    const r = await triggerReport(ctx, subject);
+    await reply(r.body ? `📄 ${subject}\n\n${r.body.slice(0, 3500)}` : `✗ 실패: ${r.error}`);
   } else if (text.startsWith("/status")) {
     const npcs = [];
     for (const [, s] of (ctx.state || new Map())) {
       npcs.push(`${s.name} @ (${s.x},${s.y}) ${s.mode}`);
     }
-    await sendTelegram(token, chatId, `📊 상태:\n${npcs.join("\n") || "(NPC 없음)"}`);
+    await reply(`📊 상태:\n${npcs.join("\n") || "(NPC 없음)"}`);
   } else if (text.startsWith("/help") || text === "/start") {
-    await sendTelegram(token, chatId,
-      "🏢 AI Office Bot\n" +
-      "/task <내용> — 3명에게 업무 분배\n" +
-      "/meeting <주제> — 회의실 소집 + LLM 토론\n" +
-      "/status — NPC 상태 조회",
-    );
+    await reply([
+      "🏢 AI Office Bot — 명령어",
+      "/task <내용>     — 3명에게 업무 분배",
+      "/meeting <주제>  — 회의실 소집 + 실 LLM 토론 (~70s)",
+      "/research <주제> — 깊이 리서치 (~90s)",
+      "/report <주제>   — 보고서 작성 (~120s)",
+      "/status          — NPC 상태 조회",
+    ].join("\n"));
   } else {
-    // 자유 메시지는 task 로 간주
+    // 자유 메시지 → task 로 간주
     const r = await triggerTask(ctx, text);
-    await sendTelegram(token, chatId, `📋 받은 메시지를 업무로 처리합니다 (분배: ${r.distributed}명)`);
+    await reply(`📋 받은 메시지를 업무로 처리 (분배: ${r.distributed}명)`);
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 리서치 / 보고서 모드 트리거
+// ─────────────────────────────────────────────────────────────
+
+async function triggerResearch(ctx, topic) {
+  const channelId = nextChannelId(ctx);
+  if (!channelId) return { ok: false, error: "no NPCs loaded yet" };
+  console.log(`[AI-Office] /research: ${topic}`);
+
+  const modePrompts = safeRequireModePrompts();
+  const agents = [
+    { name: "김대리", id: "kim-daeri" },
+    { name: "박과장", id: "park-gwajang" },
+    { name: "이주임", id: "lee-juim" },
+  ];
+
+  // 3명이 동시에 research 모드로 작업 (병렬)
+  ctx.paused = true;
+  for (const t of agents) {
+    const seat = WORK_SEATS[t.name];
+    moveNpcTo(ctx, t.name, seat);
+    speech(ctx, ctx.findNpcByName(t.name).id, channelId, `${t.name}: 리서치 시작`, 4000);
+  }
+
+  const results = await Promise.all(agents.map(async (a) => {
+    const sys = modePrompts ? modePrompts.getPrompt(a.id, "research", { topic }) : "";
+    const text = await runOpenClawChat(
+      a.id,
+      sys + "\n\n위 페르소나/모드 지시에 따라, 주제: \"" + topic + "\" 를 리서치하세요.",
+      90000,
+    );
+    return { agent: a.name, text };
+  }));
+
+  for (const r of results) {
+    const npc = ctx.findNpcByName(r.agent);
+    if (npc) speech(ctx, npc.id, channelId, `${r.agent}: ${r.text.slice(0, 160)}`, 10000);
+  }
+
+  setTimeout(() => { unfreezeAll(ctx); ctx.paused = false; }, 3000);
+
+  const summary = results.map((r) => `[${r.agent}]\n${r.text}`).join("\n\n");
+  return { ok: true, topic, entries: results, summary };
+}
+
+async function triggerReport(ctx, subject) {
+  const channelId = nextChannelId(ctx);
+  if (!channelId) return { ok: false, error: "no NPCs loaded yet" };
+  console.log(`[AI-Office] /report: ${subject}`);
+
+  const modePrompts = safeRequireModePrompts();
+  const agents = [
+    { name: "김대리", id: "kim-daeri" },
+    { name: "박과장", id: "park-gwajang" },
+    { name: "이주임", id: "lee-juim" },
+  ];
+
+  ctx.paused = true;
+  for (const t of agents) {
+    const seat = WORK_SEATS[t.name];
+    moveNpcTo(ctx, t.name, seat);
+    speech(ctx, ctx.findNpcByName(t.name).id, channelId, `${t.name}: 보고서 작성 중`, 5000);
+  }
+
+  // 3개 섹션 병렬 작성
+  const sections = await Promise.all(agents.map(async (a) => {
+    const sys = modePrompts ? modePrompts.getPrompt(a.id, "report", { topic: subject }) : "";
+    const text = await runOpenClawChat(
+      a.id,
+      sys + "\n\n위 페르소나/모드 지시에 따라, 보고서 주제: \"" + subject + "\" 의 내 담당 섹션을 작성하세요.",
+      120000,
+    );
+    return { agent: a.name, text };
+  }));
+
+  // 박과장(Claude)이 최종 합본 작성
+  const draft = sections.map((s) => `[${s.agent} 섹션]\n${s.text}`).join("\n\n");
+  const finalText = await runOpenClawChat(
+    "park-gwajang",
+    `다음 세 명의 섹션을 자연스럽게 하나의 보고서로 통합해주세요. 마크다운 헤더 금지, 격식 있는 산문체. 주제는 "${subject}".\n\n${draft}`,
+    120000,
+  );
+
+  setTimeout(() => { unfreezeAll(ctx); ctx.paused = false; }, 3000);
+
+  return { ok: true, subject, body: finalText, sections };
+}
+
+function safeRequireModePrompts() {
+  try {
+    return require("./mode-prompts.js");
+  } catch (e) {
+    console.warn("[AI-Office] mode-prompts load fail:", e.message);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Firestore 동기화 (페르소나/프롬프트 클라우드 저장)
+// ─────────────────────────────────────────────────────────────
+
+function startFirestoreSync(ctx) {
+  const saPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+  if (!saPath || !fs.existsSync(saPath)) {
+    console.log("[AI-Office] firestore: 서비스 계정 미설정 — 동기화 미가동.");
+    return;
+  }
+  let admin;
+  try {
+    admin = require(path.join(
+      __dirname, "..", "desk_rpg_model", "node_modules", "firebase-admin",
+    ));
+  } catch (e) {
+    console.warn("[AI-Office] firestore: firebase-admin 미설치 (npm i firebase-admin)");
+    return;
+  }
+
+  try {
+    const serviceAccount = JSON.parse(fs.readFileSync(saPath, "utf8"));
+    if (admin.apps.length === 0) {
+      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    }
+  } catch (e) {
+    console.warn("[AI-Office] firestore init err:", e.message);
+    return;
+  }
+
+  const db = admin.firestore();
+  const modePrompts = safeRequireModePrompts();
+  if (!modePrompts) return;
+
+  // 첫 로드: Firestore 에 문서가 없으면 seed 로 채우기
+  (async () => {
+    try {
+      const snap = await db.collection("npc-prompts").get();
+      const data = {};
+      snap.forEach((doc) => { data[doc.id] = doc.data(); });
+      if (Object.keys(data).length === 0) {
+        // seed
+        const seed = modePrompts.exportSeed();
+        for (const [agentId, doc] of Object.entries(seed)) {
+          await db.collection("npc-prompts").doc(agentId).set({
+            ...doc,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+        console.log("[AI-Office] firestore: seed 데이터 업로드 완료");
+      } else {
+        modePrompts.sync(data);
+        console.log(`[AI-Office] firestore: ${Object.keys(data).length}개 프롬프트 캐시됨`);
+      }
+
+      // 실시간 구독 (다른 디바이스에서 변경 시 즉시 반영)
+      db.collection("npc-prompts").onSnapshot((qs) => {
+        const updated = {};
+        qs.forEach((doc) => { updated[doc.id] = doc.data(); });
+        modePrompts.sync(updated);
+        console.log("[AI-Office] firestore: 프롬프트 캐시 갱신");
+      });
+    } catch (e) {
+      console.warn("[AI-Office] firestore sync error:", e.message);
+    }
+  })();
 }
 
 module.exports = { setupAIOfficeAgents };

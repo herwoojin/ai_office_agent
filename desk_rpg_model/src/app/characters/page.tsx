@@ -182,6 +182,12 @@ function CharactersPageInner() {
             📺 데모 보기
           </Link>
           <Link
+            href="/setup"
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded font-semibold text-sm"
+          >
+            🛠️ 설정 허브
+          </Link>
+          <Link
             href="/settings/llm"
             className="px-4 py-2 bg-amber-600 hover:bg-amber-700 rounded font-semibold text-sm"
           >

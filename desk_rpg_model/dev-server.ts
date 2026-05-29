@@ -107,6 +107,14 @@ app.prepare().then(async () => {
 
   setupSocketHandlers(io);
 
+  // ─── Scheduled aggregate reports (per-channel daily summary) ───
+  try {
+    const { startReportScheduler } = await import("./src/lib/scheduled-reports");
+    startReportScheduler();
+  } catch (err) {
+    console.warn("[reports] scheduler failed to start:", (err as Error).message);
+  }
+
   // ─── AI Office Agents 통합 (dev 모드용) ───
   try {
     const path = await import("node:path");

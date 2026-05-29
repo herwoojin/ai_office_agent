@@ -2005,6 +2005,24 @@ const en: Record<string, string> = {
   "task.reportDetail": "Task Detail",
   "task.noReport": "No report available yet.",
   "task.reportLoading": "Loading report...",
+  // Sidebar
+  "sidebar.expand": "Expand sidebar",
+  "sidebar.collapse": "Collapse sidebar",
+  "sidebar.helpHint": "New here? Read the guide →",
+  "sidebar.section.start": "Start",
+  "sidebar.section.play": "Office",
+  "sidebar.section.ai": "AI Setup",
+  "sidebar.section.tools": "Tools",
+  "sidebar.section.admin": "Admin",
+  "sidebar.item.onboarding": "Getting Started",
+  "sidebar.item.home": "Home",
+  "sidebar.item.characters": "My Characters",
+  "sidebar.item.channels": "Offices",
+  "sidebar.item.gateways": "Gateways",
+  "sidebar.item.llm": "LLM Settings",
+  "sidebar.item.reports": "Reports",
+  "sidebar.item.mapEditor": "Map Editor",
+  "sidebar.item.adminGroups": "Group Admin",
 };
 
 export default en;

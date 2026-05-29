@@ -2006,6 +2006,24 @@ const ko: Record<string, string> = {
   "task.reportDetail": "태스크 상세",
   "task.noReport": "아직 보고된 내용이 없습니다.",
   "task.reportLoading": "보고서 조회 중...",
+  // Sidebar
+  "sidebar.expand": "사이드바 펼치기",
+  "sidebar.collapse": "사이드바 접기",
+  "sidebar.helpHint": "처음이라면 가이드 보기 →",
+  "sidebar.section.start": "시작하기",
+  "sidebar.section.play": "사무실 입장",
+  "sidebar.section.ai": "AI 셋업",
+  "sidebar.section.tools": "도구",
+  "sidebar.section.admin": "관리",
+  "sidebar.item.onboarding": "첫걸음 가이드",
+  "sidebar.item.home": "홈",
+  "sidebar.item.characters": "내 캐릭터",
+  "sidebar.item.channels": "사무실 목록",
+  "sidebar.item.gateways": "게이트웨이",
+  "sidebar.item.llm": "LLM 설정",
+  "sidebar.item.reports": "정기 보고서",
+  "sidebar.item.mapEditor": "맵 에디터",
+  "sidebar.item.adminGroups": "그룹 관리",
 };
 
 export default ko;

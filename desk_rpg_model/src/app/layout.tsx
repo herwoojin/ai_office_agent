@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import Providers from "@/components/Providers";
+import AppShell from "@/components/AppShell";
 import { LOCALE_COOKIE_NAME } from "@/lib/i18n/constants";
 import { normalizeLocale, translateServer } from "@/lib/i18n/server";
 import "./globals.css";
@@ -52,7 +53,7 @@ export default async function RootLayout({
 
   return (
     <html lang={locale} className="h-full antialiased">
-      <body className="min-h-full flex flex-col"><Providers initialLocale={locale}>{children}</Providers></body>
+      <body className="min-h-full flex flex-col"><Providers initialLocale={locale}><AppShell>{children}</AppShell></Providers></body>
     </html>
   );
 }

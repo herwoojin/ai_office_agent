@@ -2004,6 +2004,24 @@ const zh: Record<string, string> = {
   "task.reportDetail": "任务详情",
   "task.noReport": "暂无报告内容。",
   "task.reportLoading": "正在加载报告...",
+  // Sidebar
+  "sidebar.expand": "展开侧边栏",
+  "sidebar.collapse": "收起侧边栏",
+  "sidebar.helpHint": "首次使用？查看指南 →",
+  "sidebar.section.start": "开始",
+  "sidebar.section.play": "办公室",
+  "sidebar.section.ai": "AI 配置",
+  "sidebar.section.tools": "工具",
+  "sidebar.section.admin": "管理",
+  "sidebar.item.onboarding": "新手指南",
+  "sidebar.item.home": "首页",
+  "sidebar.item.characters": "我的角色",
+  "sidebar.item.channels": "办公室列表",
+  "sidebar.item.gateways": "网关",
+  "sidebar.item.llm": "LLM 设置",
+  "sidebar.item.reports": "定期报告",
+  "sidebar.item.mapEditor": "地图编辑器",
+  "sidebar.item.adminGroups": "团队管理",
 };
 
 export default zh;

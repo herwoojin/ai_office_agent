@@ -2004,6 +2004,24 @@ const ja: Record<string, string> = {
   "task.reportDetail": "タスク詳細",
   "task.noReport": "まだ報告がありません。",
   "task.reportLoading": "レポートを取得中...",
+  // Sidebar
+  "sidebar.expand": "サイドバーを展開",
+  "sidebar.collapse": "サイドバーを折りたたむ",
+  "sidebar.helpHint": "はじめての方はガイドへ →",
+  "sidebar.section.start": "はじめに",
+  "sidebar.section.play": "オフィス",
+  "sidebar.section.ai": "AI セットアップ",
+  "sidebar.section.tools": "ツール",
+  "sidebar.section.admin": "管理",
+  "sidebar.item.onboarding": "はじめてガイド",
+  "sidebar.item.home": "ホーム",
+  "sidebar.item.characters": "マイキャラ",
+  "sidebar.item.channels": "オフィス一覧",
+  "sidebar.item.gateways": "ゲートウェイ",
+  "sidebar.item.llm": "LLM 設定",
+  "sidebar.item.reports": "定期レポート",
+  "sidebar.item.mapEditor": "マップエディタ",
+  "sidebar.item.adminGroups": "グループ管理",
 };
 
 export default ja;

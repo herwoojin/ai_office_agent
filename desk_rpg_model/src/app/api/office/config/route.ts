@@ -57,31 +57,82 @@ async function readOpenClawConfig() {
 }
 
 async function setAgentModel(agentId: string, model: string) {
-  const jsonPath = `agents.entries[?(@.id=='${agentId}')].model.primary`;
-  await exec("openclaw", ["config", "set", jsonPath, model], { timeout: 15000 });
-  // 또한 'allowed' 리스트에 모델을 추가해서 fallback 으로도 동작하게 한다
+  // openclaw 의 config set 은 JSONPath 필터를 지원하지 않고 숫자 인덱스만 받음.
+  // 따라서 id 로 인덱스를 먼저 찾아서 agents.list[N] 경로를 구성한다.
+  const cfg = await readOpenClawConfig();
+  const list = (cfg?.agents?.list || []) as Array<{ id?: string }>;
+  const idx = list.findIndex((entry) => entry?.id === agentId);
+  if (idx < 0) {
+    throw new Error(`agent ${agentId} not found in agents.list — openclaw.json 에 항목을 먼저 만들어 두세요`);
+  }
+  await exec("openclaw", ["config", "set", `agents.list[${idx}].model.primary`, model], { timeout: 15000 });
+  // 'allowed' 리스트에도 추가해서 fallback 으로 동작하게 한다
   try {
-    const allowedPath = `agents.entries[?(@.id=='${agentId}')].model.allowed`;
-    await exec("openclaw", ["config", "set", allowedPath, JSON.stringify([model])], { timeout: 15000 });
+    await exec(
+      "openclaw",
+      ["config", "set", `agents.list[${idx}].model.allowed`, JSON.stringify([model])],
+      { timeout: 15000 },
+    );
   } catch {/* allowed 필드는 옵션 */}
 }
 
 async function loginProvider(provider: Provider, apiKey: string) {
-  // openclaw 의 stdin 으로 키 전달
-  const child = execFile("openclaw", [
-    "capability", "model", "auth", "login",
-    "--provider", provider,
-    "--method", "api-key",
-  ]);
-  child.stdin?.write(apiKey + "\n");
-  child.stdin?.end();
-  return new Promise<{ ok: boolean; output: string }>((resolve) => {
-    let out = "";
-    child.stdout?.on("data", (d) => (out += d));
-    child.stderr?.on("data", (d) => (out += d));
-    child.on("close", (code) => resolve({ ok: code === 0, output: out }));
-    child.on("error", (e) => resolve({ ok: false, output: e.message }));
-  });
+  try {
+    const homeDir = process.env.HOME || "/Users/heoujin";
+    const agents = ["main", "kim-daeri", "park-gwajang", "lee-juim"];
+    
+    for (const agent of agents) {
+      const authPath = path.join(homeDir, ".openclaw", "agents", agent, "agent", "auth-profiles.json");
+      const parentDir = path.dirname(authPath);
+      
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+
+      let data: any = { version: 1, profiles: {} };
+      if (fs.existsSync(authPath)) {
+        try {
+          data = JSON.parse(fs.readFileSync(authPath, "utf8"));
+        } catch (e) {
+          console.warn(`Failed to parse auth-profiles for ${agent}, resetting:`, e);
+        }
+      }
+
+      if (!data.profiles) data.profiles = {};
+
+      const profileKey = `${provider}:manual`;
+      data.profiles[profileKey] = {
+        type: "api_key",
+        provider: provider,
+        key: apiKey
+      };
+
+      fs.writeFileSync(authPath, JSON.stringify(data, null, 2), "utf8");
+    }
+
+    // openclaw.json 에도 등록하는 것이 안전함
+    const openclawJsonPath = path.join(homeDir, ".openclaw", "openclaw.json");
+    if (fs.existsSync(openclawJsonPath)) {
+      try {
+        const configData = JSON.parse(fs.readFileSync(openclawJsonPath, "utf8"));
+        if (!configData.auth) configData.auth = {};
+        if (!configData.auth.profiles) configData.auth.profiles = {};
+        
+        configData.auth.profiles[`${provider}:manual`] = {
+          provider: provider,
+          mode: "api_key"
+        };
+        
+        fs.writeFileSync(openclawJsonPath, JSON.stringify(configData, null, 2), "utf8");
+      } catch (e) {
+        console.warn("Failed to update openclaw.json auth profiles:", e);
+      }
+    }
+
+    return { ok: true, output: `${provider} API 키 저장 완료` };
+  } catch (e) {
+    return { ok: false, output: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -104,7 +155,7 @@ export async function GET(req: NextRequest) {
 
   // NPC 목록 + 매핑된 OpenClaw agent + 모델 + 페르소나
   const npcRows = await db.select().from(npcs);
-  const agents = (ocConfig?.agents?.entries || []) as Array<{
+  const agents = (ocConfig?.agents?.list || []) as Array<{
     id: string; name?: string; model?: { primary?: string }; identity?: { name?: string };
   }>;
 
@@ -192,7 +243,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ errorCode: "missing_params", error: "agentId, model required" }, { status: 400 });
       }
       await setAgentModel(agentId, model);
-      return NextResponse.json({ ok: true, message: `${agentId} → ${model} 설정 완료` });
+      return NextResponse.json({
+        ok: true,
+        message: `${agentId} → ${model} 설정 완료. 변경을 적용하려면 OpenClaw 게이트웨이를 재시작해야 할 수 있어요 (\`openclaw gateway --port 18789\` 재실행).`,
+      });
     }
 
     if (body.action === "setNpcPersona") {

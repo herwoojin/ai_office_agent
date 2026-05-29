@@ -238,8 +238,14 @@ function GamePageInner() {
 
   // NPC dialog state — all managed here, ChatPanel is pure display
   const [dialogNpc, setDialogNpc] = useState<{ npcId: string; npcName: string } | null>(null);
-  // Keep ref in sync so socket listeners can read current value without stale closure
-  useEffect(() => { dialogNpcRef.current = dialogNpc; }, [dialogNpc]);
+  // Keep ref in sync so socket listeners can read current value without stale closure.
+  // Also clear any leftover "streaming" state when the active NPC changes, so a
+  // previous stuck conversation never disables the input for the next one.
+  useEffect(() => {
+    dialogNpcRef.current = dialogNpc;
+    setIsNpcStreaming(false);
+    streamBufferRef.current = "";
+  }, [dialogNpc]);
   const [npcMessages, setNpcMessages] = useState<NpcChatMessage[]>([]);
   const [isNpcStreaming, setIsNpcStreaming] = useState(false);
   // Task session state
@@ -674,8 +680,17 @@ function GamePageInner() {
       // NPC response streaming — DM messages only
       socketInstance.on("npc:response", (data: NpcResponsePayload) => {
         const chunk = resolveNpcResponseChunk(data, t);
-        // Ignore responses for NPCs not in the current dialog
-        if (dialogNpcRef.current && dialogNpcRef.current.npcId !== data.npcId) return;
+        // Ignore content updates for NPCs not in the current dialog, but
+        // ALWAYS honor the {done:true} signal so the input field gets unlocked
+        // even if the user switched away mid-stream.
+        const dialogMismatch =
+          dialogNpcRef.current && dialogNpcRef.current.npcId !== data.npcId;
+        if (dialogMismatch && !data.done) return;
+        if (dialogMismatch && data.done) {
+          setIsNpcStreaming(false);
+          streamBufferRef.current = "";
+          return;
+        }
 
         if (chunk) {
           streamBufferRef.current += chunk;

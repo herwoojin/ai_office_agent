@@ -596,21 +596,36 @@ async function streamNpcResponse(
   }
 
   const sessionKey = sessionKeyOverride || `${sessionKeyPrefix || npcId}-dm-${userId}`;
+
+  // Hard timeout to prevent the client UI from being stuck on "응답 중..."
+  // when the gateway/model hangs (provider down, wrong model name, etc.).
+  const CHAT_TIMEOUT_MS = 90_000;
+  let timedOut = false;
+  const chatPromise = gateway.chatSend(
+    agentId,
+    sessionKey,
+    message,
+    (delta: string) => {
+      if (timedOut) return;
+      socket.emit(responseEvent, { npcId, chunk: delta, done: false });
+    },
+    attachments,
+  );
+  const timeoutPromise = new Promise<string>((_, reject) => {
+    setTimeout(() => {
+      timedOut = true;
+      reject(new Error("gateway_timeout"));
+    }, CHAT_TIMEOUT_MS);
+  });
+
   try {
-    const response = await gateway.chatSend(
-      agentId,
-      sessionKey,
-      message,
-      (delta: string) => {
-        socket.emit(responseEvent, { npcId, chunk: delta, done: false });
-      },
-      attachments,
-    );
+    const response = await Promise.race([chatPromise, timeoutPromise]);
     socket.emit(responseEvent, { npcId, chunk: "", done: true });
     return response || "";
   } catch (err) {
     console.error(`[npc] OpenClaw chatSend error for ${npcId}:`, err);
-    emitNpcSystemResponse(socket, npcId, "gateway_error");
+    // ALWAYS emit done:true so the client unlocks input even on error.
+    emitNpcSystemResponse(socket, npcId, timedOut ? "gateway_error" : "gateway_error");
     return "";
   }
 }

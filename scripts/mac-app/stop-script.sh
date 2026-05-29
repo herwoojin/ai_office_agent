@@ -3,7 +3,15 @@
 # AI Office 중지.app — 본체 스크립트
 # =============================================================================
 
-PROJECT_ROOT="/Users/heoujin/ai-office-agents"
+find_project_root() {
+  if [ -n "$AI_OFFICE_HOME" ] && [ -d "$AI_OFFICE_HOME/desk_rpg_model" ]; then
+    echo "$AI_OFFICE_HOME"; return
+  fi
+  for cand in "$HOME/ai-office-agents" "$HOME/Documents/ai-office-agents" "/Applications/AI-Office-Agents"; do
+    if [ -d "$cand/desk_rpg_model" ]; then echo "$cand"; return; fi
+  done
+}
+PROJECT_ROOT="$(find_project_root)"
 PID_FILE="$PROJECT_ROOT/.pids/deskrpg.pid"
 
 dialog() {

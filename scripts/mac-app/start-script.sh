@@ -8,11 +8,46 @@
 
 set -e
 
-PROJECT_ROOT="/Users/heoujin/ai-office-agents"
+# ─── 프로젝트 루트 자동 탐색 ───
+# 우선순위: AI_OFFICE_HOME env > ~/ai-office-agents > /Applications/AI-Office-Agents
+find_project_root() {
+  if [ -n "$AI_OFFICE_HOME" ] && [ -d "$AI_OFFICE_HOME/desk_rpg_model" ]; then
+    echo "$AI_OFFICE_HOME"; return
+  fi
+  for cand in "$HOME/ai-office-agents" "$HOME/Documents/ai-office-agents" "/Applications/AI-Office-Agents"; do
+    if [ -d "$cand/desk_rpg_model" ]; then echo "$cand"; return; fi
+  done
+  return 1
+}
+
+PROJECT_ROOT="$(find_project_root)" || {
+  osascript -e 'display dialog "AI Office Agents 폴더를 찾지 못했습니다.\n\n다음 위치 중 한 곳에 설치하세요:\n  • ~/ai-office-agents\n  • ~/Documents/ai-office-agents\n  • /Applications/AI-Office-Agents\n\n또는 환경변수 AI_OFFICE_HOME 을 설정하세요." with title "❌ AI Office Agents" buttons {"닫기"} default button "닫기" with icon stop'
+  exit 1
+}
+
 LOG="$PROJECT_ROOT/logs/deskrpg.log"
 PID_FILE="$PROJECT_ROOT/.pids/deskrpg.pid"
 
 mkdir -p "$PROJECT_ROOT/logs" "$PROJECT_ROOT/.pids"
+
+# ─── 도구 경로 탐색 (Homebrew on Intel/ARM, /usr/local, fnm/nvm) ───
+find_bin() {
+  local name="$1"
+  for p in \
+    "/opt/homebrew/bin/$name" \
+    "/usr/local/bin/$name" \
+    "$HOME/.fnm/aliases/default/bin/$name" \
+    "$HOME/.nvm/current/bin/$name" \
+    "$HOME/.volta/bin/$name" \
+  ; do
+    [ -x "$p" ] && { echo "$p"; return 0; }
+  done
+  command -v "$name" 2>/dev/null && return 0
+  return 1
+}
+
+NPM_BIN="$(find_bin npm)" || NPM_BIN="npm"
+OPENCLAW_BIN="$(find_bin openclaw)" || OPENCLAW_BIN=""
 
 # ─── 헬퍼 함수 ───
 
@@ -132,8 +167,8 @@ if [ "$btn" != "시작" ]; then exit 0; fi
 notify "AI Office Agents" "게이트웨이 시작 중..."
 
 if ! openclaw_up; then
-  if command -v openclaw >/dev/null 2>&1; then
-    /usr/bin/caffeinate -i /opt/homebrew/bin/openclaw gateway > "$PROJECT_ROOT/logs/openclaw.log" 2>&1 &
+  if [ -n "$OPENCLAW_BIN" ]; then
+    /usr/bin/caffeinate -i "$OPENCLAW_BIN" gateway --port 18789 > "$PROJECT_ROOT/logs/openclaw.log" 2>&1 &
     # 가동 대기 (최대 10초)
     for i in {1..10}; do
       if openclaw_up; then break; fi
@@ -163,14 +198,19 @@ lsof -ti :3000 2>/dev/null | xargs kill 2>/dev/null
 sleep 1
 
 # caffeinate 로 wrap → sleep 방지 + 백그라운드 실행
-/usr/bin/caffeinate -i /opt/homebrew/bin/npm run dev > "$LOG" 2>&1 &
+/usr/bin/caffeinate -i "$NPM_BIN" run dev > "$LOG" 2>&1 &
 DESKRPG_PID=$!
 echo $DESKRPG_PID > "$PID_FILE"
 
-# 준비될 때까지 대기 (최대 60초)
+# 준비될 때까지 대기 (최대 60초). dev-server.ts 가 "Dev server ready" 를 찍거나
+# 포트 3000 이 열리면 가동 완료로 본다.
 READY=0
 for i in {1..30}; do
-  if grep -q "office trigger server" "$LOG" 2>/dev/null; then
+  if grep -q "Dev server ready\|office trigger server" "$LOG" 2>/dev/null; then
+    READY=1
+    break
+  fi
+  if deskrpg_up; then
     READY=1
     break
   fi

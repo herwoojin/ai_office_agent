@@ -45,7 +45,66 @@
     "db:migrate": "dotenv -e .env.local -- drizzle-kit migrate",
     "db:studio": "dotenv -e .env.local -- drizzle-kit studio",
     "db:setup": "dotenv -e .env.local -- drizzle-kit migrate",
-    "deploy:test": "bash deploy/test-deploy.sh"
+    "deploy:test": "bash deploy/test-deploy.sh",
+    "electron:dev": "electron electron/main.js",
+    "electron:build": "electron-builder",
+    "electron:build:mac": "electron-builder --mac",
+    "electron:build:win": "electron-builder --win",
+    "electron:build:all": "electron-builder -mw"
+  },
+  "main": "electron/main.js",
+  "build": {
+    "appId": "com.dante-labs.ai-office-agents",
+    "productName": "AI Office Agents",
+    "asar": true,
+    "directories": {
+      "output": "../dist/electron"
+    },
+    "files": [
+      "electron/**/*",
+      "dev-server.ts",
+      "server.js",
+      "next.config.ts",
+      "tsconfig.json",
+      "drizzle.config.ts",
+      "drizzle-sqlite.config.ts",
+      "package.json",
+      "public/**/*",
+      "src/**/*",
+      "drizzle/**/*",
+      "node_modules/**/*",
+      "!**/*.{md,test.ts,test.tsx,test.js}",
+      "!**/__tests__/**",
+      "!**/.git/**",
+      "!**/.next/cache/**"
+    ],
+    "extraResources": [
+      { "from": ".env.example", "to": ".env.example" }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        { "target": "dmg",  "arch": ["arm64", "x64"] },
+        { "target": "zip",  "arch": ["arm64", "x64"] }
+      ],
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null
+    },
+    "win": {
+      "target": [
+        { "target": "nsis",     "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AI Office Agents"
+    }
   },
   "dependencies": {
     "@imgly/background-removal": "^1.7.0",
@@ -84,6 +143,8 @@
     "@types/ssh2": "^1.15.5",
     "canvas": "^3.2.2",
     "dotenv-cli": "^11.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "tailwindcss": "^4",
